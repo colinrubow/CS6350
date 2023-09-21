@@ -31,8 +31,8 @@ class ID3():
         with open(directory, 'r') as f:
            data = [line.strip().split(',') for line in f]
         return data
-    
-    def test_model(self, directory: str, contains_numeric: bool = False) -> float:
+
+    def test_model(self, directory: str, contains_numeric: bool = False, contains_unknown: bool = False) -> float:
         """
         Test the model.
 
@@ -45,6 +45,21 @@ class ID3():
         The percentage of the accuracy of the model against the test data.
         """
         testing_data = self.__read_data(directory)
+        if contains_unknown:
+            # fill in the unknown data with the mode of that value
+            for i in range(len(testing_data[0]) - 1):
+                # iterate over the attributes
+                real_values = [d[i] for d in testing_data if not d[i] == 'unknown']
+                # assuming all attributes don't have all examples as unknown (why have this attribute if that's the case?)
+                if len(real_values) < len(testing_data):
+                    # some of the data is unknown
+                    # get mode of this data
+                    counts = Counter(real_values)
+                    value_mode = counts.most_common(1)[0][0]
+                    for d in testing_data:
+                        if d[i] == 'unknown': d[i] = value_mode
+                # data for this attribute is complete now
+            # data is complete now
         num_tests = len(testing_data)
         match_list = [1 if example[-1] == self.predict_example(example, contains_numeric=contains_numeric) else 0 for example in testing_data]
         score = sum(match_list)
@@ -75,7 +90,7 @@ class ID3():
             else:
                 return self.predict_example(example, model[i]['<' + str(thresh)], contains_numeric)
         return self.predict_example(example, model[i][example[int(i)]], contains_numeric)
-        
+
     def load_model(self, directory: str) -> None:
         """
         Loads a model. The model is a dictionary saved in a .txt file.
@@ -87,7 +102,7 @@ class ID3():
         with open(directory, 'r') as f:
             dict_str = f.read()
         self.model = json.loads(dict_str)
-    
+
     def save_model(self, directory: str) -> None:
         """
         Saves the model to the given directory as the string format in txt file.
@@ -146,7 +161,7 @@ class ID3():
         best_attribute_index = list(attributes.keys()).index(best_attribute)
         overall_attribute_index = self.__attributes_list.index(best_attribute)
         node = {overall_attribute_index: {}}
-        # if contains_numeric and values is 'numeric' do binary
+        # if contains_numeric and values is 'numeric'
         values = attributes.pop(best_attribute)
         if contains_numeric and values[0] == "numeric":
                 ex_values = [float(ex[best_attribute_index]) for ex in s]
@@ -154,6 +169,19 @@ class ID3():
                 values = ['>' + str(thresh), '<' + str(thresh)]
                 for es in s:
                     es[best_attribute_index] = values[0] if float(es[best_attribute_index]) >= thresh else values[1]
+        else:
+            # check for example values that aren't in values list
+            real_values = [ex[best_attribute_index] for ex in s if ex[best_attribute_index] in values]
+            if not real_values:
+                # all values in s are not in values, return node with most common outcome
+                counts = Counter(s_labels)
+                return counts.most_common(1)[0][0]
+            if len(real_values) < len(s):
+                # there are some values in s not in the list. Correct them.
+                counter = Counter(real_values)
+                value_mode = counter.most_common(1)[0][0]
+                for ex in s:
+                    if ex[best_attribute_index] not in values: ex[best_attribute_index] = value_mode
         for v in values:
             sv = [ex[:best_attribute_index] + ex[best_attribute_index+1:] for ex in s if ex[best_attribute_index] == v]
             if not sv:
@@ -163,7 +191,7 @@ class ID3():
                 result = self.__run_ID3(copy.deepcopy(sv), copy.deepcopy(attributes), gain_function, current_depth, depth_limit, contains_numeric)
             node[overall_attribute_index].update({v: result})
         return node
-    
+
     def __get_best_attribute(self, s : list, attributes : dict, gain_function : Callable, contains_numeric: bool = False) -> str:
         """
         Determines the best attribute to split s with.
@@ -191,6 +219,18 @@ class ID3():
                 values = ['upper', 'lower']
                 for es in s:
                     es[i] = 'upper' if float(es[i]) >= thresh else 'lower'
+            else:
+                # check for example values that aren't in values list
+                real_values = [ex[i] for ex in s if ex[i] in values]
+                if not real_values:
+                    # all values in s are not in list. move on.
+                    continue
+                if len(real_values) < len(s):
+                    # there are some values in s not in the list. Correct them with most often occuring value
+                    counter = Counter(real_values)
+                    value_mode = counter.most_common(1)[0][0]
+                    for ex in s:
+                        if ex[i] not in values: ex[i] = value_mode
             sets = [[] for _ in values]
             for ex in s:
                 sets[values.index(ex[i])].append(ex)
@@ -198,7 +238,7 @@ class ID3():
             performance_increase = current_performance - split_performance
             if performance_increase > best_performance: best_attribute = a; best_performance = performance_increase
         return best_attribute
-            
+
     def __entropy(self, sv: list) -> float:
         """
         calculates the entropy of a set
@@ -215,7 +255,7 @@ class ID3():
         labels = [s[-1] for s in sv]
         value, counts = np.unique(labels, return_counts=True)
         return entropy(counts, base=2)
-    
+
     def __majority_error(self, sv: list) -> float:
         """
         calculates the majority error of a set
