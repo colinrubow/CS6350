@@ -1,5 +1,8 @@
 import json
 from collections import Counter
+import numpy as np
+from scipy.stats import entropy
+from typing import Callable
 
 class ID3():
     """
@@ -12,7 +15,7 @@ class ID3():
     def __init__(self) -> None:
         self.model = None
 
-    def read_data(self, directory: str) -> list:
+    def __read_data(self, directory: str) -> list:
         """
         Loading the training/testing data.
 
@@ -40,9 +43,9 @@ class ID3():
         -------
         The percentage of the accuracy of the model against the test data.
         """
-        testing_data = self.read_data(directory)
+        testing_data = self.__read_data(directory)
         num_tests = len(testing_data)
-        match_list = [1 if example[-1] == self.predict_example(example[:-1]) else 0 for example in testing_data]
+        match_list = [1 if example[-1] == self.predict_example(example) else 0 for example in testing_data]
         score = sum(match_list)
         return score/num_tests
 
@@ -60,9 +63,10 @@ class ID3():
         -------
         The model's prediction
         """
-        if not example: return model
+        if type(model) == str: return model
         if not model: return self.predict_example(example, self.model)
-        return self.predict_example(model[example[0]], example[1:])
+        i = list(model.keys())[0]
+        return self.predict_example(example, model[i][example[int(i)]])
         
     def load_model(self, directory: str) -> None:
         """
@@ -84,11 +88,11 @@ class ID3():
         ---------
         directory : the given directory (.txt)
         """
-        dict_str = str(self.model)
+        dict_str = json.dumps(self.model)
         with open(directory, 'w') as f:
             f.write(dict_str)
 
-    def train_model(self, max_depth: int = None, gain_type: str = 'IG', directory: str = None, attributes: dict = None) -> None:
+    def train_model(self, max_depth: int = None, gain_type: str = 'IG', directory: str = None, attributes: dict = None, contains_numeric: bool = False) -> None:
         """
         Given some training data, will train a model.
 
@@ -102,8 +106,15 @@ class ID3():
         directory : the directory of the training data.
         attributes : the attributes as keys and a list of values as values.
         """
+        training_data = self.__read_data(directory)
+        match gain_type:
+            case 'IG' : gain_function = self.__entropy
+            case 'ME' : gain_function = self.__majority_error
+            case 'GI' : gain_function = self.__gini_index
+        self.__attributes_list = list(attributes.keys())
+        self.model = self.__run_ID3(training_data, attributes.copy(), gain_function, 0, max_depth, contains_numeric)
 
-    def run_ID3(self, s : list, attributes : dict, labels : list, current_depth : int, depth_limit: int = None) -> dict:
+    def __run_ID3(self, s : list, attributes : dict, gain_function: Callable, current_depth : int, depth_limit: int = None, contains_numeric: bool = False) -> dict:
         """
         Runs the ID3 algorithm.
 
@@ -118,8 +129,112 @@ class ID3():
         # if all labels are the same
         if all([s_labels[0] == label for label in s_labels]):
             return s[0][-1]
-        # if out of attributes
-        if not attributes:
+        # if out of attributes or depth limit is reached
+        if not attributes or current_depth == depth_limit:
             counts = Counter(s_labels)
             return counts.most_common(1)[0][0]
-        "TODO: finish"
+        current_depth += 1
+        best_attribute = self.__get_best_attribute(s.copy(), attributes=attributes, gain_function=gain_function, contains_numeric=contains_numeric)
+        best_attribute_index = list(attributes.keys()).index(best_attribute)
+        overall_attribute_index = self.__attributes_list.index(best_attribute)
+        node = {overall_attribute_index: {}}
+        # if contains_numeric and values is 'numeric' do binary
+        values = attributes.pop(best_attribute)
+        for v in values:
+            sv = [ex[:best_attribute_index] + ex[best_attribute_index+1:] for ex in s if ex[best_attribute_index] == v]
+            if not sv:
+                counts = Counter(s_labels)
+                result = counts.most_common(1)[0][0]
+            else:
+                result = self.__run_ID3(sv, attributes.copy(), gain_function, current_depth, depth_limit)
+            node[overall_attribute_index].update({v: result})
+        return node
+    
+    def __get_best_attribute(self, s : list, attributes : dict, gain_function : Callable, contains_numeric: bool = False) -> str:
+        """
+        Determines the best attribute to split s with.
+
+        Arguments
+        ---------
+        s : the examples
+        attributes : the attributes with values
+        gain_type : Information gain, majority error, or gini index
+
+        Returns
+        -------
+        The attribute that best splits the data
+        """
+        current_performance = gain_function(s)
+        keys = list(attributes.keys())
+        best_attribute = keys[0]
+        best_performance = 0
+        # I'm pretty sure attributes.keys() is ordered
+        for i, a in enumerate(keys):
+            values = attributes[a]
+            if contains_numeric and values[0] == "numeric":
+                ex_values = [ex[i] for ex in s]
+                thresh = np.median(ex_values)
+                values = ['upper', 'lower']
+                for es in s:
+                    es[i] = 'upper' if es[i] >= thresh else 'lower'
+            sets = [[] for _ in values]
+            for ex in s:
+                sets[values.index(ex[i])].append(ex)
+            split_performance = sum([len(set)*gain_function(set) for set in sets])/len(s)
+            performance_increase = current_performance - split_performance
+            if performance_increase > best_performance: best_attribute = a; best_performance = performance_increase
+        return best_attribute
+            
+    def __entropy(self, sv: list) -> float:
+        """
+        calculates the entropy of a set
+
+        Arguments
+        ---------
+        sv : the set
+
+        Returns
+        -------
+        the entropy
+        """
+        # only the last index of each list in sv is needed
+        labels = [s[-1] for s in sv]
+        value, counts = np.unique(labels, return_counts=True)
+        return entropy(counts, base=2)
+    
+    def __majority_error(self, sv: list) -> float:
+        """
+        calculates the majority error of a set
+
+        Arguments
+        ---------
+        sv : the set
+
+        Returns
+        -------
+        the majority error
+        """
+        # only the last index of each list in sv is needed
+        if not sv: return 0
+        labels = [s[-1] for s in sv]
+        counts = Counter(labels)
+        majority_label, majority_count = counts.most_common(1)[0]
+        return (len(sv) - majority_count)/len(sv)
+
+    def __gini_index(self, sv: list) -> float:
+        """
+        calculates the gini index of a set
+
+        Arguments
+        ---------
+        sv : the set
+
+        Returns
+        -------
+        the gini index
+        """
+        # only the last index of each list in sv is needed
+        labels = [s[-1] for s in sv]
+        counts = Counter(labels)
+        counts = counts.values()
+        return 1 - sum([(c/len(sv))**2 for c in counts])
