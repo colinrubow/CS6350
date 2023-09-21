@@ -3,6 +3,7 @@ from collections import Counter
 import numpy as np
 from scipy.stats import entropy
 from typing import Callable
+import copy
 
 class ID3():
     """
@@ -31,7 +32,7 @@ class ID3():
            data = [line.strip().split(',') for line in f]
         return data
     
-    def test_model(self, directory: str) -> float:
+    def test_model(self, directory: str, contains_numeric: bool = False) -> float:
         """
         Test the model.
 
@@ -45,11 +46,11 @@ class ID3():
         """
         testing_data = self.__read_data(directory)
         num_tests = len(testing_data)
-        match_list = [1 if example[-1] == self.predict_example(example) else 0 for example in testing_data]
+        match_list = [1 if example[-1] == self.predict_example(example, contains_numeric=contains_numeric) else 0 for example in testing_data]
         score = sum(match_list)
         return score/num_tests
 
-    def predict_example(self, example: list, model: dict = None) -> str:
+    def predict_example(self, example: list, model: dict = None, contains_numeric: bool = False) -> str:
         """
         Runs an example through the model and returns the prediction.
 
@@ -64,9 +65,16 @@ class ID3():
         The model's prediction
         """
         if type(model) == str: return model
-        if not model: return self.predict_example(example, self.model)
+        if not model: return self.predict_example(example, self.model, contains_numeric)
         i = list(model.keys())[0]
-        return self.predict_example(example, model[i][example[int(i)]])
+        # numeric case
+        if contains_numeric and list(model[i].keys())[0][0] in ['>', '<']:
+            thresh = float(list(model[i].keys())[0][1:])
+            if float(example[i]) >= thresh:
+                return self.predict_example(example, model[i]['>' + str(thresh)], contains_numeric)
+            else:
+                return self.predict_example(example, model[i]['<' + str(thresh)], contains_numeric)
+        return self.predict_example(example, model[i][example[int(i)]], contains_numeric)
         
     def load_model(self, directory: str) -> None:
         """
@@ -134,19 +142,25 @@ class ID3():
             counts = Counter(s_labels)
             return counts.most_common(1)[0][0]
         current_depth += 1
-        best_attribute = self.__get_best_attribute(s.copy(), attributes=attributes, gain_function=gain_function, contains_numeric=contains_numeric)
+        best_attribute = self.__get_best_attribute(copy.deepcopy(s), attributes=copy.deepcopy(attributes), gain_function=gain_function, contains_numeric=contains_numeric)
         best_attribute_index = list(attributes.keys()).index(best_attribute)
         overall_attribute_index = self.__attributes_list.index(best_attribute)
         node = {overall_attribute_index: {}}
         # if contains_numeric and values is 'numeric' do binary
         values = attributes.pop(best_attribute)
+        if contains_numeric and values[0] == "numeric":
+                ex_values = [float(ex[best_attribute_index]) for ex in s]
+                thresh = np.median(ex_values)
+                values = ['>' + str(thresh), '<' + str(thresh)]
+                for es in s:
+                    es[best_attribute_index] = values[0] if float(es[best_attribute_index]) >= thresh else values[1]
         for v in values:
             sv = [ex[:best_attribute_index] + ex[best_attribute_index+1:] for ex in s if ex[best_attribute_index] == v]
             if not sv:
                 counts = Counter(s_labels)
                 result = counts.most_common(1)[0][0]
             else:
-                result = self.__run_ID3(sv, attributes.copy(), gain_function, current_depth, depth_limit)
+                result = self.__run_ID3(copy.deepcopy(sv), copy.deepcopy(attributes), gain_function, current_depth, depth_limit, contains_numeric)
             node[overall_attribute_index].update({v: result})
         return node
     
@@ -172,11 +186,11 @@ class ID3():
         for i, a in enumerate(keys):
             values = attributes[a]
             if contains_numeric and values[0] == "numeric":
-                ex_values = [ex[i] for ex in s]
+                ex_values = [float(ex[i]) for ex in s]
                 thresh = np.median(ex_values)
                 values = ['upper', 'lower']
                 for es in s:
-                    es[i] = 'upper' if es[i] >= thresh else 'lower'
+                    es[i] = 'upper' if float(es[i]) >= thresh else 'lower'
             sets = [[] for _ in values]
             for ex in s:
                 sets[values.index(ex[i])].append(ex)
