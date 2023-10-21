@@ -1,0 +1,2 @@
+lms.py has two functions that run two different gradient descent styles, batch and stochastic.
+The training and testing data has each example in rows. The last column is the classification of the example. The first column is all 1's. Each will output the trained model and the test error of that model. Each will also write a csv file recording the test and train errors for each iteration.

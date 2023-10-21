@@ -4,6 +4,7 @@ import numpy as np
 from scipy.stats import entropy
 from typing import Callable
 import copy
+import random as r
 
 class ID3():
     """
@@ -123,7 +124,7 @@ class ID3():
         with open(directory, 'w') as f:
             f.write(dict_str)
 
-    def train_model(self, max_depth: int = None, gain_type: str = 'IG', directory: str = None, attributes: dict = None, contains_numeric: bool = False) -> None:
+    def train_model(self, max_depth: int = None, gain_type: str = 'IG', training_data: list = None, attributes: dict = None, contains_numeric: bool = False, num_attributes: int = None) -> None:
         """
         Given some training data, will train a model.
 
@@ -137,15 +138,15 @@ class ID3():
         directory : the directory of the training data.
         attributes : the attributes as keys and a list of values as values.
         """
-        training_data = self.__read_data(directory)
+        # training_data = self.__read_data(directory)
         match gain_type:
             case 'IG' : gain_function = self.__entropy
             case 'ME' : gain_function = self.__majority_error
             case 'GI' : gain_function = self.__gini_index
         self.__attributes_list = list(attributes.keys())
-        self.model = self.__run_ID3(training_data, attributes.copy(), gain_function, 0, max_depth, contains_numeric)
+        self.model = self.__run_ID3(training_data, attributes.copy(), gain_function, 0, max_depth, contains_numeric, num_attributes)
 
-    def __run_ID3(self, s : list, attributes : dict, gain_function: Callable, current_depth : int, depth_limit: int = None, contains_numeric: bool = False) -> dict:
+    def __run_ID3(self, s : list, attributes : dict, gain_function: Callable, current_depth : int, depth_limit: int = None, contains_numeric: bool = False, num_attributes: int = None) -> dict:
         """
         Runs the ID3 algorithm.
 
@@ -165,7 +166,7 @@ class ID3():
             counts = Counter(s_labels)
             return counts.most_common(1)[0][0]
         current_depth += 1
-        best_attribute = self.__get_best_attribute(copy.deepcopy(s), attributes=copy.deepcopy(attributes), gain_function=gain_function, contains_numeric=contains_numeric)
+        best_attribute = self.__get_best_attribute(copy.deepcopy(s), attributes=copy.deepcopy(attributes), gain_function=gain_function, contains_numeric=contains_numeric, num_attributes=num_attributes)
         best_attribute_index = list(attributes.keys()).index(best_attribute)
         overall_attribute_index = self.__attributes_list.index(best_attribute)
         node = {overall_attribute_index: {}}
@@ -200,7 +201,7 @@ class ID3():
             node[overall_attribute_index].update({v: result})
         return node
 
-    def __get_best_attribute(self, s : list, attributes : dict, gain_function : Callable, contains_numeric: bool = False) -> str:
+    def __get_best_attribute(self, s : list, attributes : dict, gain_function : Callable, contains_numeric: bool = False, num_attributes: int = None) -> str:
         """
         Determines the best attribute to split s with.
 
@@ -216,10 +217,14 @@ class ID3():
         """
         current_performance = gain_function(s)
         keys = list(attributes.keys())
-        best_attribute = keys[0]
+        # keys is ordered so I need to make pairings and then extract with random the num of attributes to bounce wit
+        keys = [(key, k) for k, key in enumerate(keys)]
+        if num_attributes is not None:
+            keys = r.sample(keys, k=num_attributes)
+        best_attribute = keys[0][0]
         best_performance = 0
         # I'm pretty sure attributes.keys() is ordered
-        for i, a in enumerate(keys):
+        for a, i in keys:
             values = attributes[a]
             if contains_numeric and values[0] == "numeric":
                 ex_values = [float(ex[i]) for ex in s]
