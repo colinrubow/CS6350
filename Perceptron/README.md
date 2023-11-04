@@ -1,0 +1,4 @@
+perceptron.py has three functions for running three different perceptron styles: standard, voting, and averaging.
+The training and testing data has each examples in rows.
+The last column is the classification of the example as either -1 or 1. The first column should be all 1's. Each of the three functions will output the learned perceptron weighted vector and if testing data is given to the function, it will also return the test error for each epoch.
+There is also two functions for testing a perceptron. The first is the standard and averaging and the other is for testing a voting perceptron model.
