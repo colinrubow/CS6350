@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 
 # prep data
-test_directory = './../HW3/bank-note/test.csv'
-train_directory = './../HW3/bank-note/train.csv'
+test_directory = './Perceptron/bank-note/test.csv'
+train_directory = './Perceptron/bank-note/train.csv'
 test_data = pd.read_csv(test_directory, header=None)
 train_data = pd.read_csv(train_directory, header=None)
 test_data = test_data.to_numpy()
